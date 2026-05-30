@@ -13,7 +13,7 @@ export default async function TodayPage() {
       </div>
       {picks.length===0
         ? <div className="text-gray-400 text-center py-20 border border-gray-800 rounded-lg">No picks yet. Model runs at 9 AM and 5 PM ET.</div>
-        : <TodayTable picks={picks}/>}
+        : <TodayTable picks={picks as never}/>}
     </div>
   );
 }
