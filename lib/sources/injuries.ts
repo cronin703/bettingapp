@@ -1,4 +1,4 @@
-import Anthropic from 'anthropic';
+import Anthropic from '@anthropic-ai/sdk';
 import type { InjuryReport } from '@/lib/types';
 const client = new Anthropic();
 export async function fetchInjuries(team: string, date: string): Promise<InjuryReport[]> {

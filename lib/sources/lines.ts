@@ -1,4 +1,4 @@
-import Anthropic from 'anthropic';
+import Anthropic from '@anthropic-ai/sdk';
 export interface LinesData { total: number|null; spread: number|null; opening_line: number|null; }
 const client = new Anthropic();
 export async function fetchLines(home: string, away: string, date: string): Promise<LinesData> {
