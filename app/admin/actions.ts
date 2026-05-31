@@ -21,6 +21,10 @@ export async function runPregame() {
   return callEndpoint('/api/cron/pregame');
 }
 
+export async function runSettle() {
+  return callEndpoint('/api/cron/settle');
+}
+
 export async function runBackfill(date: string) {
   return callEndpoint(`/api/backfill?date=${date}`);
 }

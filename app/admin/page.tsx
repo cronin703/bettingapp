@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { runMorning, runPregame, runBackfill } from './actions';
+import { runMorning, runPregame, runSettle, runBackfill } from './actions';
 
 function JobButton({ label, desc, action, color = 'blue' }: {
   label: string; desc: string; color?: string;
@@ -96,6 +96,9 @@ export default function AdminPage() {
       <JobButton label="Run Pregame Model (Today)" color="green"
         desc="Re-run model with updated lines closer to tipoff"
         action={runPregame} />
+      <JobButton label="Settle Today's Results" color="green"
+        desc="Fetch final scores for today's games and record win/loss"
+        action={runSettle} />
       <BackfillPanel />
     </div>
   );
