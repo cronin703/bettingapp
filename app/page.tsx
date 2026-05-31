@@ -1,7 +1,7 @@
 import { getTodaysPicks } from '@/lib/db/queries';
 import { format } from 'date-fns';
 import TodayTable from '@/components/TodayTable';
-export const revalidate = 1800;
+export const revalidate = 60;
 export default async function TodayPage() {
   let picks: Awaited<ReturnType<typeof getTodaysPicks>> = [];
   try { picks = await getTodaysPicks(); } catch {}

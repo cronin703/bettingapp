@@ -10,8 +10,15 @@ export async function getTodaysPicks() {
 }
 export async function getAllResults() {
   const { rows } = await sql`
-    SELECT r.*, p.direction, p.line, p.edge_count, p.edges_fired, p.sizing, g.home_team, g.away_team, g.date
-    FROM results r JOIN picks p ON r.pick_id = p.id JOIN games g ON p.game_id = g.id ORDER BY g.date DESC`;
+    SELECT
+      r.final_score_home, r.final_score_away, r.total, r.result,
+      r.entry_line, r.closing_line, r.clv,
+      p.id as pick_id, p.direction, p.line, p.edge_count, p.edges_fired, p.sizing, p.run_type,
+      g.home_team, g.away_team, g.date
+    FROM picks p
+    JOIN games g ON p.game_id = g.id
+    LEFT JOIN results r ON r.pick_id = p.id
+    ORDER BY g.date DESC, g.tipoff_time ASC`;
   return rows;
 }
 export async function getCLVLog(): Promise<CLVLog[]> {
