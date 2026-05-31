@@ -88,3 +88,43 @@ export function runModel(game: GameInput): ModelOutput {
 
   return { edge_count, edges_fired, direction, sizing: sz, reasoning };
 }
+
+// Backfill variant: 1-edge threshold so historical games without live lines still get picks
+export function runModelBackfill(game: GameInput): ModelOutput {
+  const g = game;
+  const results = [
+    { name:'back_to_back',        ...edges.backToBack(g.schedule_context) },
+    { name:'travel_fatigue',      ...edges.travelFatigue(g.schedule_context) },
+    { name:'injury',              ...edges.injury(g.injuries) },
+    { name:'pace_mismatch',       ...edges.paceMismatch(g.pace_differential) },
+    { name:'line_movement',       ...edges.lineMovement(g.opening_line, g.total) },
+    { name:'rest_asymmetry',      ...edges.restAsymmetry(g.schedule_context) },
+    { name:'venue_effect',        ...edges.venueEffect(g.home_team, g.away_team) },
+    { name:'defensive_matchup',   ...edges.defensiveMatchup(g.home_team, g.away_team, g.total) },
+    { name:'historical_median',   ...edges.historicalMedian(g.home_team, g.away_team, g.total) },
+    { name:'arena_factor',        ...edges.arenaFactor(g.home_team) },
+    { name:'stale_line_with_news',...edges.staleLine(g.opening_line, g.total, g.injuries) },
+  ];
+
+  const over = results.filter(e => e.over).map(e => e.name);
+  const under = results.filter(e => e.under).map(e => e.name);
+  const conflict = over.length > 0 && under.length > 0;
+
+  let direction: 'over'|'under'|'skip' = 'skip';
+  let edges_fired: string[] = [];
+
+  if (!conflict) {
+    if (over.length >= 1)  { direction = 'over';  edges_fired = over; }
+    if (under.length >= 1) { direction = 'under'; edges_fired = under; }
+  } else {
+    edges_fired = [...over.map(e=>`OVER:${e}`), ...under.map(e=>`UNDER:${e}`)];
+  }
+
+  const edge_count = edges_fired.filter(e => !e.includes(':')).length;
+  const sz = sizing(edge_count);
+  const reasoning = direction === 'skip'
+    ? `No bet: no aligned edges for ${g.away_team} @ ${g.home_team}.${conflict?' Conflicting signals.':''}`
+    : `[BACKFILL] ${direction.toUpperCase()} ${g.total ?? '?'} -- ${edge_count} edge(s): ${edges_fired.join(', ')}. Size: ${sz}%`;
+
+  return { edge_count, edges_fired, direction, sizing: sz, reasoning };
+}

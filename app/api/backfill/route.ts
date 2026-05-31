@@ -3,7 +3,7 @@ import { fetchTodaysSchedule, fetchGameScores } from '@/lib/sources/scores';
 import { fetchLines } from '@/lib/sources/lines';
 import { fetchInjuries } from '@/lib/sources/injuries';
 import { fetchScheduleContext } from '@/lib/sources/schedule-context';
-import { runModel } from '@/lib/model/engine';
+import { runModelBackfill } from '@/lib/model/engine';
 import { upsertGame, upsertPick, updateResult } from '@/lib/db/queries';
 import type { GameInput } from '@/lib/types';
 
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
         line: lines.spread, total: lines.total, opening_line: lines.opening_line,
         injuries: [...hi, ...ai], pace_differential: null, schedule_context: sched,
       };
-      const out = runModel(input);
+      const out = runModelBackfill(input);
       const pickId = await upsertPick({
         game_id: gameId, direction: out.direction, edge_count: out.edge_count,
         edges_fired: out.edges_fired, line: lines.total, model_call: out.reasoning,
