@@ -10,8 +10,9 @@ export async function fetchInjuries(team: string, date: string): Promise<InjuryR
     });
     const t = r.content.find(c => c.type==='text');
     if (!t || t.type!=='text') return [];
-    const m = t.text.match(/\[[\s\S]*\]/);
-    if (!m) return [];
-    return (JSON.parse(m[0]) as Array<Omit<InjuryReport,'team'>>).map(p => ({ ...p, team }));
+    const fenced = t.text.match(/```(?:json)?\s*(\[[\s\S]*?\])\s*```/);
+    const raw = fenced ? fenced[1] : (t.text.match(/\[[\s\S]*\]/) ?? [])[0];
+    if (!raw) return [];
+    return (JSON.parse(raw) as Array<Omit<InjuryReport,'team'>>).map(p => ({ ...p, team }));
   } catch { return []; }
 }
