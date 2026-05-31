@@ -22,7 +22,7 @@ export async function upsertGame(game: Omit<Game, 'id' | 'created_at'>): Promise
   const { rows } = await sql`
     INSERT INTO games (date, home_team, away_team, tipoff_time, status)
     VALUES (${game.date}, ${game.home_team}, ${game.away_team}, ${game.tipoff_time}, ${game.status})
-    ON CONFLICT DO NOTHING RETURNING id`;
+    ON CONFLICT (date, home_team, away_team) DO UPDATE SET tipoff_time=EXCLUDED.tipoff_time, status=EXCLUDED.status RETURNING id`;
   if (rows.length > 0) return rows[0].id;
   const { rows: ex } = await sql`SELECT id FROM games WHERE date=${game.date} AND home_team=${game.home_team} AND away_team=${game.away_team}`;
   return ex[0].id;
@@ -32,7 +32,9 @@ export async function upsertPick(pick: Omit<Pick, 'id' | 'created_at'>): Promise
     INSERT INTO picks (game_id, direction, edge_count, edges_fired, line, model_call, sizing, run_type)
     VALUES (${pick.game_id}, ${pick.direction}, ${pick.edge_count}, ${JSON.stringify(pick.edges_fired)},
             ${pick.line}, ${pick.model_call}, ${pick.sizing}, ${pick.run_type})
-    ON CONFLICT DO NOTHING RETURNING id`;
+    ON CONFLICT (game_id, run_type) DO UPDATE SET direction=EXCLUDED.direction, edge_count=EXCLUDED.edge_count,
+      edges_fired=EXCLUDED.edges_fired, line=EXCLUDED.line, model_call=EXCLUDED.model_call, sizing=EXCLUDED.sizing
+    RETURNING id`;
   if (rows.length > 0) return rows[0].id;
   const { rows: ex } = await sql`SELECT id FROM picks WHERE game_id=${pick.game_id} AND run_type=${pick.run_type}`;
   if (ex.length > 0) {

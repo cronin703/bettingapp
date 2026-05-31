@@ -1,7 +1,8 @@
 CREATE TABLE IF NOT EXISTS games (
   id SERIAL PRIMARY KEY, date DATE NOT NULL, home_team VARCHAR(100) NOT NULL,
   away_team VARCHAR(100) NOT NULL, tipoff_time TIMESTAMPTZ NOT NULL,
-  status VARCHAR(20) DEFAULT 'scheduled', created_at TIMESTAMPTZ DEFAULT NOW()
+  status VARCHAR(20) DEFAULT 'scheduled', created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (date, home_team, away_team)
 );
 CREATE TABLE IF NOT EXISTS picks (
   id SERIAL PRIMARY KEY, game_id INTEGER REFERENCES games(id),
@@ -9,7 +10,8 @@ CREATE TABLE IF NOT EXISTS picks (
   edge_count INTEGER NOT NULL DEFAULT 0, edges_fired JSONB NOT NULL DEFAULT '[]',
   line NUMERIC(5,1), model_call TEXT, sizing NUMERIC(4,2) DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  run_type VARCHAR(10) NOT NULL CHECK (run_type IN ('morning','pregame'))
+  run_type VARCHAR(10) NOT NULL CHECK (run_type IN ('morning','pregame')),
+  UNIQUE (game_id, run_type)
 );
 CREATE TABLE IF NOT EXISTS results (
   id SERIAL PRIMARY KEY, pick_id INTEGER REFERENCES picks(id) UNIQUE,
