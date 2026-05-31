@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { runMorning, runPregame, runSettle, runBackfill } from './actions';
+import { triggerMorning, triggerPregame, triggerSettle, triggerBackfill } from './actions';
 
 function JobButton({ label, desc, action, color = 'blue' }: {
   label: string; desc: string; color?: string;
@@ -54,7 +54,7 @@ function BackfillPanel() {
     if (!date) return;
     setStatus('running'); setResult('');
     try {
-      const data = await runBackfill(date);
+      const data = await triggerBackfill(date);
       setResult(JSON.stringify(data, null, 2));
       setStatus('done');
     } catch (e) { setResult(String(e)); setStatus('error'); }
@@ -92,13 +92,13 @@ export default function AdminPage() {
       <p className="text-sm text-gray-400">Manually trigger model runs. The cron does this automatically at 9 AM and 5 PM ET.</p>
       <JobButton label="Run Morning Model (Today)" color="blue"
         desc="Fetch today's schedule, lines, injuries → generate picks"
-        action={runMorning} />
+        action={triggerMorning} />
       <JobButton label="Run Pregame Model (Today)" color="green"
-        desc="Re-run model with updated lines closer to tipoff"
-        action={runPregame} />
+        desc="Re-run model with updated lines + auto-backfill last 7 days"
+        action={triggerPregame} />
       <JobButton label="Settle Today's Results" color="green"
         desc="Fetch final scores for today's games and record win/loss"
-        action={runSettle} />
+        action={triggerSettle} />
       <BackfillPanel />
     </div>
   );
