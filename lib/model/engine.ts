@@ -1,124 +1,271 @@
-import type { GameInput, ModelOutput, InjuryReport, ScheduleContext } from '@/lib/types';
+import type { InjuryReport, ModelOutput } from '@/lib/types';
+import type { GameContext } from '@/lib/sources/game-context';
 
-const WNBA_AVG_TOTAL = 167;
-
-// Score: +2 = strong over lean, +1 = mild over lean, -1 = mild under lean, -2 = strong under lean
-const PACE_SCORE: Record<string, number> = {
-  'Las Vegas Aces': 2, 'New York Liberty': 2, 'Seattle Storm': 1,
-  'Chicago Sky': 1, 'Golden State Valkyries': 1, 'Atlanta Dream': 1,
-  'Dallas Wings': 1, 'Los Angeles Sparks': 1, 'Toronto Tempo': 1,
-  'Indiana Fever': -1, 'Connecticut Sun': -2, 'Minnesota Lynx': -2,
-  'Washington Mystics': -1, 'Phoenix Mercury': -1, 'Portland Fire': -1,
-};
-
-function paceScore(home: string, away: string) {
-  return (PACE_SCORE[home] ?? 0) + (PACE_SCORE[away] ?? 0);
+export interface FullGameInput {
+  home_team: string;
+  away_team: string;
+  date: string;
+  tipoff_time: string;
+  context: GameContext;
+  injuries: InjuryReport[];
 }
 
-const edge = (over: boolean, under: boolean) => ({ over, under });
+interface EdgeResult {
+  name: string;
+  fired: boolean;
+  direction: 'over' | 'under' | null; // null = NO DATA or not fired
+  reason: string;
+}
 
-const edges = {
-  backToBack: (s: ScheduleContext) =>
-    edge(false, s.home_back_to_back || s.away_back_to_back),
+// ─── The 11 Structural Edges ───────────────────────────────────────────────
 
-  travelFatigue: (s: ScheduleContext) =>
-    edge(false, s.away_travel && s.away_days_rest <= 1),
+function e1_fatigue(ctx: GameContext): EdgeResult {
+  const fired = ctx.home_back_to_back || ctx.away_back_to_back || ctx.home_3_in_4 || ctx.away_3_in_4;
+  const parts = [];
+  if (ctx.home_back_to_back) parts.push('home B2B');
+  if (ctx.away_back_to_back) parts.push('away B2B');
+  if (ctx.home_3_in_4) parts.push('home 3-in-4');
+  if (ctx.away_3_in_4) parts.push('away 3-in-4');
+  return {
+    name: 'E1 Back-to-Back/Fatigue',
+    fired,
+    direction: fired ? 'under' : null,
+    reason: fired ? parts.join(', ') : 'No fatigue flags',
+  };
+}
 
-  injury: (inj: InjuryReport[]) =>
-    edge(false, inj.some(i => i.impact_level === 'high' && i.status === 'out')),
+function e2_slowPace(ctx: GameContext): EdgeResult {
+  // Both teams bottom-10 in possessions per 40 (rank 3+ out of 12 teams → rank >= 10 = slowest)
+  const { home_pace_rank, away_pace_rank } = ctx;
+  if (home_pace_rank === null || away_pace_rank === null)
+    return { name: 'E2 Slow vs Slow Pace', fired: false, direction: null, reason: 'NO DATA — pace ranks unavailable' };
+  const bothSlow = home_pace_rank >= 10 && away_pace_rank >= 10;
+  return {
+    name: 'E2 Slow vs Slow Pace',
+    fired: bothSlow,
+    direction: bothSlow ? 'under' : null,
+    reason: bothSlow
+      ? `Both slow: home rank ${home_pace_rank}, away rank ${away_pace_rank}`
+      : `Not both slow: home rank ${home_pace_rank}, away rank ${away_pace_rank}`,
+  };
+}
 
-  paceMismatch: (d: number | null) =>
-    d === null ? edge(false, false) : edge(d > 5, d < -5),
+function e3_eliteDefHome(ctx: GameContext): EdgeResult {
+  const { home_def_rtg_rank, season_week } = ctx;
+  if (home_def_rtg_rank === null)
+    return { name: 'E3 Elite Defense at Home', fired: false, direction: null, reason: 'NO DATA — DEF RTG rank unavailable' };
+  // Apply SOS filter: weeks 1-4, discount DEF RTG
+  if (season_week !== null && season_week <= 4)
+    return { name: 'E3 Elite Defense at Home', fired: false, direction: null, reason: `Early season (week ${season_week}) — SOS filter applied, DEF RTG unreliable` };
+  const fired = home_def_rtg_rank <= 5;
+  return {
+    name: 'E3 Elite Defense at Home',
+    fired,
+    direction: fired ? 'under' : null,
+    reason: fired
+      ? `Home team top-5 DEF RTG (rank ${home_def_rtg_rank})`
+      : `Home DEF RTG rank ${home_def_rtg_rank} — not top-5`,
+  };
+}
 
-  lineMovement: (o: number | null, c: number | null) =>
-    (!o || !c) ? edge(false, false) : edge(c - o < -1.5, c - o > 1.5),
+function e4_refereeCrew(ctx: GameContext): EdgeResult {
+  if (!ctx.referee_crew || !ctx.referee_tendency)
+    return { name: 'E4 Referee Crew', fired: false, direction: null, reason: 'NO DATA — crew not yet assigned or unavailable' };
+  const fired = ctx.referee_tendency !== 'neutral';
+  return {
+    name: 'E4 Referee Crew',
+    fired,
+    direction: fired ? (ctx.referee_tendency === 'foul-heavy' ? 'over' : 'under') : null,
+    reason: fired
+      ? `${ctx.referee_crew} — ${ctx.referee_tendency} crew`
+      : `${ctx.referee_crew} — neutral crew`,
+  };
+}
 
-  restAsymmetry: (s: ScheduleContext) => {
-    const diff = Math.abs(s.home_days_rest - s.away_days_rest);
-    return edge(false, diff >= 2);
-  },
+function e5_earlySeason(ctx: GameContext): EdgeResult {
+  if (ctx.season_week === null)
+    return { name: 'E5 Early Season', fired: false, direction: null, reason: 'NO DATA — season week unavailable' };
+  const fired = ctx.season_week <= 4;
+  return {
+    name: 'E5 Early Season',
+    fired,
+    direction: fired ? 'under' : null,
+    reason: fired ? `Week ${ctx.season_week} — early season flag` : `Week ${ctx.season_week} — not early season`,
+  };
+}
 
-  // Net pace score across both teams: positive = over lean, negative = under lean
-  venueEffect: (home: string, away: string) => {
-    const net = paceScore(home, away);
-    return edge(net >= 2, net <= -2);
-  },
+function e6_playerOut(injuries: InjuryReport[]): EdgeResult {
+  const out = injuries.filter(i => i.status === 'out' && i.impact_level === 'high');
+  if (!out.length)
+    return { name: 'E6 Key Playmaker Out', fired: false, direction: null, reason: 'No high-impact players ruled out' };
 
-  // Mild pace lean: fires on net ≥1 or ≤-1
-  defensiveMatchup: (home: string, away: string, total: number | null) => {
-    if (total !== null) return edge(total > WNBA_AVG_TOTAL + 7, total < WNBA_AVG_TOTAL - 7);
-    const net = paceScore(home, away);
-    return edge(net >= 1, net <= -1);
-  },
+  // Rim protector out = over signal; ball-handler/scorer out = under signal
+  const rimOut = out.some(i => ['C', 'F', 'PF', 'SF'].includes(i.position.toUpperCase()));
+  const ballHandlerOut = out.some(i => ['G', 'PG', 'SG'].includes(i.position.toUpperCase()));
+  const names = out.map(i => `${i.player} (${i.team})`).join(', ');
 
-  // Total vs historical median; falls back to pace profile
-  historicalMedian: (home: string, away: string, total: number | null) => {
-    if (total !== null) return edge(total < WNBA_AVG_TOTAL - 5, total > WNBA_AVG_TOTAL + 5);
-    const net = paceScore(home, away);
-    return edge(net >= 2, net <= -2);
-  },
+  if (rimOut && ballHandlerOut) return { name: 'E6 Key Playmaker Out', fired: false, direction: null, reason: `Mixed: ${names} — rim protector and ball-handler both out, skip` };
+  return {
+    name: 'E6 Key Playmaker Out',
+    fired: true,
+    direction: rimOut ? 'over' : 'under',
+    reason: `${names} out — ${rimOut ? 'rim protector (over signal)' : 'ball-handler/scorer (under signal)'}`,
+  };
+}
 
-  // Home team pace identity (they set the tempo)
-  arenaFactor: (home: string) => {
-    const s = PACE_SCORE[home] ?? 0;
-    return edge(s > 0, s < 0);
-  },
+function e7_reverseLineMovement(ctx: GameContext): EdgeResult {
+  const { opening_total, current_total, public_pct_over } = ctx;
+  if (opening_total === null || current_total === null)
+    return { name: 'E7 Reverse Line Movement', fired: false, direction: null, reason: 'NO DATA — line movement unavailable' };
 
-  staleLine: (o: number | null, c: number | null, inj: InjuryReport[]) =>
-    (!o || !c) ? edge(false, false)
-      : edge(false, Math.abs(c - o) < 0.5 && inj.some(i => i.impact_level === 'high')),
-};
+  const dropped = current_total < opening_total - 0.4;
+  const publicOnOver = public_pct_over !== null && public_pct_over >= 60;
+  const fired = dropped && publicOnOver;
+  return {
+    name: 'E7 Reverse Line Movement',
+    fired,
+    direction: fired ? 'under' : null,
+    reason: fired
+      ? `Total dropped ${opening_total} → ${current_total} despite ${public_pct_over}% public on Over (sharp Under)`
+      : `Open: ${opening_total}, Current: ${current_total}, Public Over: ${public_pct_over ?? 'unknown'}%`,
+  };
+}
 
-function sizing(n: number) { return n <= 1 ? 0 : n === 2 ? 1.25 : n === 3 ? 2 : 3; }
+function e8_shootingRegression(ctx: GameContext): EdgeResult {
+  const { home_fg_pct_last5, away_fg_pct_last5, home_true_fg_pct, away_true_fg_pct } = ctx;
+  if (!home_fg_pct_last5 || !away_fg_pct_last5 || !home_true_fg_pct || !away_true_fg_pct)
+    return { name: 'E8 Shooting Regression', fired: false, direction: null, reason: 'NO DATA — FG% data unavailable' };
 
-function evaluate(g: GameInput, minEdges: number): ModelOutput {
-  const results = [
-    { name: 'back_to_back',         ...edges.backToBack(g.schedule_context) },
-    { name: 'travel_fatigue',       ...edges.travelFatigue(g.schedule_context) },
-    { name: 'injury',               ...edges.injury(g.injuries) },
-    { name: 'pace_mismatch',        ...edges.paceMismatch(g.pace_differential) },
-    { name: 'line_movement',        ...edges.lineMovement(g.opening_line, g.total) },
-    { name: 'rest_asymmetry',       ...edges.restAsymmetry(g.schedule_context) },
-    { name: 'venue_effect',         ...edges.venueEffect(g.home_team, g.away_team) },
-    { name: 'defensive_matchup',    ...edges.defensiveMatchup(g.home_team, g.away_team, g.total) },
-    { name: 'historical_median',    ...edges.historicalMedian(g.home_team, g.away_team, g.total) },
-    { name: 'arena_factor',         ...edges.arenaFactor(g.home_team) },
-    { name: 'stale_line_with_news', ...edges.staleLine(g.opening_line, g.total, g.injuries) },
+  const homeHot = home_fg_pct_last5 > home_true_fg_pct + 0.03;
+  const awayCold = away_fg_pct_last5 < away_true_fg_pct - 0.03;
+  const homeHotBig = home_fg_pct_last5 > home_true_fg_pct + 0.05;
+  const awayHotBig = away_fg_pct_last5 > away_true_fg_pct + 0.05;
+
+  if (homeHotBig || (homeHot && awayCold))
+    return { name: 'E8 Shooting Regression', fired: true, direction: 'under', reason: `Team(s) shooting above true talent — expect regression` };
+  if (awayHotBig)
+    return { name: 'E8 Shooting Regression', fired: false, direction: null, reason: 'Marginal signal — skip' };
+  return { name: 'E8 Shooting Regression', fired: false, direction: null, reason: 'No significant shooting deviation' };
+}
+
+function e9_scoringTrend(ctx: GameContext, total: number | null): EdgeResult {
+  const { home_last10_totals, away_last10_totals, home_season_avg_total, away_season_avg_total } = ctx;
+  if (!home_last10_totals.length || !away_last10_totals.length || !home_season_avg_total || !away_season_avg_total)
+    return { name: 'E9 Scoring Trend', fired: false, direction: null, reason: 'NO DATA — recent game logs unavailable' };
+
+  const countBelow = (games: number[], avg: number) => games.filter(g => g < avg).length;
+  const homeBelowCount = countBelow(home_last10_totals, home_season_avg_total);
+  const awayBelowCount = countBelow(away_last10_totals, away_season_avg_total);
+  const homeUnderTrend = homeBelowCount >= 4;
+  const awayUnderTrend = awayBelowCount >= 4;
+  const homeAboveCount = home_last10_totals.filter(g => g > home_season_avg_total).length;
+  const awayAboveCount = away_last10_totals.filter(g => g > away_season_avg_total).length;
+  const homeOverTrend = homeAboveCount >= 4;
+  const awayOverTrend = awayAboveCount >= 4;
+
+  if ((homeUnderTrend || awayUnderTrend) && !homeOverTrend && !awayOverTrend)
+    return { name: 'E9 Scoring Trend', fired: true, direction: 'under', reason: `Home ${homeBelowCount}/10 below avg, Away ${awayBelowCount}/10 below avg — Under trend` };
+  if ((homeOverTrend || awayOverTrend) && !homeUnderTrend && !awayUnderTrend)
+    return { name: 'E9 Scoring Trend', fired: true, direction: 'over', reason: `Home ${homeAboveCount}/10 above avg, Away ${awayAboveCount}/10 above avg — Over trend` };
+
+  return { name: 'E9 Scoring Trend', fired: false, direction: null, reason: `Home: ${homeBelowCount}/10 below, ${homeAboveCount}/10 above. Away: ${awayBelowCount}/10 below. No clear trend.` };
+}
+
+function e10_travel(ctx: GameContext): EdgeResult {
+  const fired = ctx.away_cross_country_travel;
+  // Early tipoff amplifies travel disadvantage
+  const earlyTipoff = ctx.tipoff_hour_et !== null && ctx.tipoff_hour_et < 14;
+  return {
+    name: 'E10 Travel Disadvantage',
+    fired,
+    direction: fired ? 'under' : null,
+    reason: fired
+      ? `Away team cross-country travel within 24hrs${earlyTipoff ? ' + early tipoff' : ''}`
+      : 'No significant travel disadvantage',
+  };
+}
+
+function e11_lookAhead(ctx: GameContext, fired_count: number): EdgeResult {
+  // Cannot be standalone — only modifier when other under edges present
+  // We approximate look-ahead from the schedule data — not standalone
+  return {
+    name: 'E11 Look-Ahead Spot',
+    fired: false,
+    direction: null,
+    reason: 'Look-ahead data not available — would only modify existing Under call, never standalone',
+  };
+}
+
+// ─── Sizing ────────────────────────────────────────────────────────────────
+
+function sizing(n: number): number {
+  if (n <= 1) return 0;
+  if (n === 2) return 1.25;
+  if (n === 3) return 2;
+  return 3;
+}
+
+// ─── Main Evaluator ────────────────────────────────────────────────────────
+
+export function runModel(input: FullGameInput): ModelOutput & { edge_results: EdgeResult[] } {
+  const { context: ctx, injuries } = input;
+  const total = ctx.current_total ?? ctx.opening_total ?? null;
+
+  const edgeResults: EdgeResult[] = [
+    e1_fatigue(ctx),
+    e2_slowPace(ctx),
+    e3_eliteDefHome(ctx),
+    e4_refereeCrew(ctx),
+    e5_earlySeason(ctx),
+    e6_playerOut(injuries),
+    e7_reverseLineMovement(ctx),
+    e8_shootingRegression(ctx),
+    e9_scoringTrend(ctx, total),
+    e10_travel(ctx),
+    e11_lookAhead(ctx, 0),
   ];
 
-  const over = results.filter(e => e.over).map(e => e.name);
-  const under = results.filter(e => e.under).map(e => e.name);
-  const conflict = over.length > 0 && under.length > 0;
+  const overEdges = edgeResults.filter(e => e.fired && e.direction === 'over').map(e => e.name);
+  const underEdges = edgeResults.filter(e => e.fired && e.direction === 'under').map(e => e.name);
+  const conflict = overEdges.length > 0 && underEdges.length > 0;
 
   let direction: 'over' | 'under' | 'skip' = 'skip';
   let edges_fired: string[] = [];
 
   if (!conflict) {
-    if (over.length >= minEdges)  { direction = 'over';  edges_fired = over; }
-    if (under.length >= minEdges) { direction = 'under'; edges_fired = under; }
+    if (overEdges.length >= 2)  { direction = 'over';  edges_fired = overEdges; }
+    if (underEdges.length >= 2) { direction = 'under'; edges_fired = underEdges; }
   } else {
-    // Conflict: go with whichever side has more edges, skip if tied
-    if (over.length > under.length + 1) { direction = 'over'; edges_fired = over; }
-    else if (under.length > over.length + 1) { direction = 'under'; edges_fired = under; }
-    else edges_fired = [...over.map(e => `OVER:${e}`), ...under.map(e => `UNDER:${e}`)];
+    // Go with the stronger side if it leads by 2+, otherwise skip
+    if (underEdges.length >= overEdges.length + 2) { direction = 'under'; edges_fired = underEdges; }
+    else if (overEdges.length >= underEdges.length + 2) { direction = 'over'; edges_fired = overEdges; }
+    else edges_fired = [...overEdges.map(e => `OVER:${e}`), ...underEdges.map(e => `UNDER:${e}`)];
   }
 
   const edge_count = edges_fired.filter(e => !e.includes(':')).length;
   const sz = sizing(edge_count);
-  const label = minEdges === 1 ? '[BACKFILL] ' : '';
   const reasoning = direction === 'skip'
-    ? `No bet: insufficient aligned edges for ${g.away_team} @ ${g.home_team}.${conflict ? ' Conflicting signals.' : ''}`
-    : `${label}${direction.toUpperCase()} ${g.total ?? '?'} -- ${edge_count} edge(s): ${edges_fired.join(', ')}. Size: ${sz}%`;
+    ? `No bet: ${conflict ? 'conflicting signals' : `only ${Math.max(overEdges.length, underEdges.length)} aligned edge(s)`} for ${input.away_team} @ ${input.home_team}.`
+    : `${direction.toUpperCase()} ${total ?? '?'} — ${edge_count} edge(s): ${edges_fired.join(', ')}. Size: ${sz}%`;
 
-  return { edge_count, edges_fired, direction, sizing: sz, reasoning };
+  return { edge_count, edges_fired, direction, sizing: sz, reasoning, edge_results: edgeResults };
 }
 
-// Live model: requires 2+ aligned edges (high confidence only)
-export function runModel(game: GameInput): ModelOutput {
-  return evaluate(game, 2);
-}
+// Backfill: 1-edge threshold for historical data without live lines
+export function runModelBackfill(input: FullGameInput): ModelOutput & { edge_results: EdgeResult[] } {
+  const base = runModel(input);
+  if (base.direction !== 'skip') return base;
 
-// Backfill: 1-edge threshold so historical games without live lines still produce picks
-export function runModelBackfill(game: GameInput): ModelOutput {
-  return evaluate(game, 1);
+  // Try with 1-edge threshold
+  const { context: ctx, injuries } = input;
+  const edgeResults = base.edge_results;
+  const underEdges = edgeResults.filter(e => e.fired && e.direction === 'under').map(e => e.name);
+  const overEdges = edgeResults.filter(e => e.fired && e.direction === 'over').map(e => e.name);
+  const conflict = overEdges.length > 0 && underEdges.length > 0;
+
+  if (!conflict) {
+    if (underEdges.length === 1) return { ...base, direction: 'under', edges_fired: underEdges, edge_count: 1, sizing: 0, reasoning: `[BACKFILL] UNDER — 1 edge: ${underEdges[0]}` };
+    if (overEdges.length === 1)  return { ...base, direction: 'over',  edges_fired: overEdges,  edge_count: 1, sizing: 0, reasoning: `[BACKFILL] OVER — 1 edge: ${overEdges[0]}` };
+  }
+  return base;
 }

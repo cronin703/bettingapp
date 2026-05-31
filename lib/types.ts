@@ -16,18 +16,9 @@ export interface CLVLog {
   id: number; date: string; bets_placed: number; wins: number; losses: number;
   avg_clv: number | null; bankroll_pct: number | null; created_at?: string;
 }
-export interface GameInput {
-  home_team: string; away_team: string; date: string; tipoff_time: string;
-  line: number | null; total: number | null; opening_line: number | null;
-  injuries: InjuryReport[]; pace_differential: number | null; schedule_context: ScheduleContext;
-}
 export interface InjuryReport {
   team: string; player: string; status: 'out' | 'questionable' | 'probable';
   position: string; impact_level: 'high' | 'medium' | 'low';
-}
-export interface ScheduleContext {
-  home_days_rest: number; away_days_rest: number; home_travel: boolean;
-  away_travel: boolean; home_back_to_back: boolean; away_back_to_back: boolean;
 }
 export interface ModelOutput {
   edge_count: number; edges_fired: string[]; direction: 'over' | 'under' | 'skip';
