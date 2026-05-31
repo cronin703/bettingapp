@@ -2,6 +2,11 @@ import type { GameInput, ModelOutput, InjuryReport, ScheduleContext } from '@/li
 
 const WNBA_AVG_TOTAL = 167; // 2024-25 season league average combined points
 
+// Teams known for high-pace offense (lean over when involved)
+const HIGH_PACE = ['Las Vegas Aces','New York Liberty','Seattle Storm','Chicago Sky','Golden State Valkyries','Atlanta Dream','Dallas Wings'];
+// Teams known for defensive identity (lean under when involved)
+const LOW_PACE  = ['Indiana Fever','Connecticut Sun','Minnesota Lynx','Washington Mystics','Phoenix Mercury'];
+
 const edge = (over: boolean, under: boolean) => ({ over, under });
 
 const edges = {
@@ -14,28 +19,30 @@ const edges = {
     const diff = Math.abs(s.home_days_rest - s.away_days_rest);
     return edge(false, diff >= 2 && (s.home_days_rest > s.away_days_rest+1 || s.away_days_rest > s.home_days_rest+1));
   },
-  // High scoring venue (above 172 historical avg at this arena) → over lean
-  venueEffect: (home: string) => {
-    const highScoring = ['Las Vegas Aces','New York Liberty','Seattle Storm','Chicago Sky'];
-    const lowScoring = ['Indiana Fever','Connecticut Sun','Minnesota Lynx'];
-    return edge(highScoring.includes(home), lowScoring.includes(home));
+  // Both teams high-pace → over; both defensive → under; mixed → neutral
+  venueEffect: (home: string, away: string) => {
+    const homeHigh = HIGH_PACE.includes(home), awayHigh = HIGH_PACE.includes(away);
+    const homeLow  = LOW_PACE.includes(home),  awayLow  = LOW_PACE.includes(away);
+    return edge(homeHigh && awayHigh, homeLow && awayLow);
   },
-  // If both teams rank high in pace (approximated by web-fetched lines being high)
-  defensiveMatchup: (total: number|null) => {
-    if (total === null) return edge(false, false);
-    // Lines set well above average suggest books see an offensive matchup
-    return edge(total > WNBA_AVG_TOTAL + 7, total < WNBA_AVG_TOTAL - 7);
+  // One team strongly high-pace vs one strongly defensive → line uncertainty
+  defensiveMatchup: (home: string, away: string, total: number|null) => {
+    const highCount = [home,away].filter(t => HIGH_PACE.includes(t)).length;
+    const lowCount  = [home,away].filter(t => LOW_PACE.includes(t)).length;
+    if (total !== null) return edge(total > WNBA_AVG_TOTAL + 7, total < WNBA_AVG_TOTAL - 7);
+    // Without a line, fire on clear stylistic mismatch
+    return edge(highCount === 2, lowCount === 2);
   },
-  // Line vs 3-year WNBA historical median (~167): extreme deviations often revert
-  historicalMedian: (total: number|null) => {
-    if (total === null) return edge(false, false);
-    return edge(total < WNBA_AVG_TOTAL - 5, total > WNBA_AVG_TOTAL + 5);
+  // Line vs 3-year WNBA historical median: use total if available, else pace profile
+  historicalMedian: (home: string, away: string, total: number|null) => {
+    if (total !== null) return edge(total < WNBA_AVG_TOTAL - 5, total > WNBA_AVG_TOTAL + 5);
+    // No line: one high-pace + one high-pace team historically goes over median
+    const highCount = [home,away].filter(t => HIGH_PACE.includes(t)).length;
+    return edge(highCount === 2, false);
   },
-  // Certain arenas (smaller/louder) suppress scoring; dome arenas boost pace
+  // Arena factor: expansion/dome teams boost pace
   arenaFactor: (home: string) => {
-    const domeBoost = ['Atlanta Dream','Dallas Wings'];
-    const smallSuppress = ['Connecticut Sun','Minnesota Lynx','Indiana Fever'];
-    return edge(domeBoost.includes(home), smallSuppress.includes(home));
+    return edge(HIGH_PACE.includes(home), LOW_PACE.includes(home));
   },
   staleLine: (o: number|null, c: number|null, inj: InjuryReport[]) =>
     (!o||!c) ? edge(false,false) : edge(false, Math.abs(c-o) < 0.5 && inj.some(i => i.impact_level==='high')),
@@ -52,9 +59,9 @@ export function runModel(game: GameInput): ModelOutput {
     { name:'pace_mismatch',       ...edges.paceMismatch(g.pace_differential) },
     { name:'line_movement',       ...edges.lineMovement(g.opening_line, g.total) },
     { name:'rest_asymmetry',      ...edges.restAsymmetry(g.schedule_context) },
-    { name:'venue_effect',        ...edges.venueEffect(g.home_team) },
-    { name:'defensive_matchup',   ...edges.defensiveMatchup(g.total) },
-    { name:'historical_median',   ...edges.historicalMedian(g.total) },
+    { name:'venue_effect',        ...edges.venueEffect(g.home_team, g.away_team) },
+    { name:'defensive_matchup',   ...edges.defensiveMatchup(g.home_team, g.away_team, g.total) },
+    { name:'historical_median',   ...edges.historicalMedian(g.home_team, g.away_team, g.total) },
     { name:'arena_factor',        ...edges.arenaFactor(g.home_team) },
     { name:'stale_line_with_news',...edges.staleLine(g.opening_line, g.total, g.injuries) },
   ];
