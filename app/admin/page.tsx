@@ -2,8 +2,8 @@
 import { useState } from 'react';
 import { triggerMorning, triggerPregame, triggerSettle, triggerBackfill } from './actions';
 
-function JobButton({ label, desc, action, color = 'blue' }: {
-  label: string; desc: string; color?: string;
+function JobButton({ label, desc, action, variant = 'filled' }: {
+  label: string; desc: string; variant?: 'filled' | 'tonal';
   action: () => Promise<unknown>;
 }) {
   const [status, setStatus] = useState<'idle'|'running'|'done'|'error'>('idle');
@@ -18,26 +18,29 @@ function JobButton({ label, desc, action, color = 'blue' }: {
     } catch (e) { setResult(String(e)); setStatus('error'); }
   }
 
-  const colors: Record<string, string> = {
-    blue: 'bg-blue-600 hover:bg-blue-500',
-    purple: 'bg-purple-600 hover:bg-purple-500',
-    green: 'bg-green-700 hover:bg-green-600',
-  };
+  const label_ = status === 'running' ? 'Running…' : status === 'done' ? 'Done' : 'Run';
 
   return (
-    <div className="border border-gray-700 rounded-lg p-4 space-y-3">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <div className="font-semibold">{label}</div>
-          <div className="text-sm text-gray-400">{desc}</div>
+    <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+        <div style={{ flex: 1 }}>
+          <p className="type-title-sm" style={{ marginBottom: 2 }}>{label}</p>
+          <p className="type-body-sm" style={{ color: 'var(--md-on-surface-variant)' }}>{desc}</p>
         </div>
-        <button onClick={run} disabled={status === 'running'}
-          className={`shrink-0 px-4 py-2 rounded ${colors[color]} disabled:bg-gray-600 disabled:cursor-not-allowed text-sm font-medium transition-colors`}>
-          {status === 'running' ? 'Running…' : status === 'done' ? '✓ Done' : 'Run'}
+        <button
+          onClick={run}
+          disabled={status === 'running'}
+          className={variant === 'tonal' ? 'btn-tonal' : 'btn-filled'}
+          style={{ flexShrink: 0 }}
+        >
+          {label_}
         </button>
       </div>
       {result && (
-        <pre className={`text-xs rounded p-3 overflow-auto max-h-48 ${status === 'error' ? 'bg-red-950 text-red-300' : 'bg-gray-900 text-green-300'}`}>
+        <pre className="code-pre" style={{
+          color: status === 'error' ? 'var(--md-loss)' : 'var(--md-win)',
+          maxHeight: 192, overflow: 'auto',
+        }}>
           {result}
         </pre>
       )}
@@ -61,23 +64,33 @@ function BackfillPanel() {
   }
 
   return (
-    <div className="border border-gray-700 rounded-lg p-4 space-y-3">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <div className="font-semibold">Backfill Past Date</div>
-          <div className="text-sm text-gray-400">Run model + record final scores for any historical date</div>
+    <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+        <div style={{ flex: 1 }}>
+          <p className="type-title-sm" style={{ marginBottom: 2 }}>Backfill Past Date</p>
+          <p className="type-body-sm" style={{ color: 'var(--md-on-surface-variant)' }}>Run model + record final scores for any historical date</p>
         </div>
-        <div className="flex gap-2 shrink-0">
-          <input type="date" value={date} onChange={e => setDate(e.target.value)}
-            className="rounded border border-gray-600 bg-gray-800 px-3 py-2 text-sm" />
-          <button onClick={run} disabled={!date || status === 'running'}
-            className="px-4 py-2 rounded bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-sm font-medium transition-colors">
-            {status === 'running' ? 'Running…' : status === 'done' ? '✓ Done' : 'Run'}
+        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          <input
+            type="date"
+            value={date}
+            onChange={e => setDate(e.target.value)}
+            className="md-input"
+          />
+          <button
+            onClick={run}
+            disabled={!date || status === 'running'}
+            className="btn-tonal"
+          >
+            {status === 'running' ? 'Running…' : status === 'done' ? 'Done' : 'Run'}
           </button>
         </div>
       </div>
       {result && (
-        <pre className={`text-xs rounded p-3 overflow-auto max-h-48 ${status === 'error' ? 'bg-red-950 text-red-300' : 'bg-gray-900 text-green-300'}`}>
+        <pre className="code-pre" style={{
+          color: status === 'error' ? 'var(--md-loss)' : 'var(--md-win)',
+          maxHeight: 192, overflow: 'auto',
+        }}>
           {result}
         </pre>
       )}
@@ -87,19 +100,34 @@ function BackfillPanel() {
 
 export default function AdminPage() {
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <h1 className="text-2xl font-bold">Admin</h1>
-      <p className="text-sm text-gray-400">Manually trigger model runs. The cron does this automatically at 9 AM and 5 PM ET.</p>
-      <JobButton label="Run Morning Model (Today)" color="blue"
-        desc="Fetch today's schedule, lines, injuries → generate picks"
-        action={triggerMorning} />
-      <JobButton label="Run Pregame Model (Today)" color="green"
-        desc="Re-run model with updated lines + auto-backfill last 7 days"
-        action={triggerPregame} />
-      <JobButton label="Settle Today's Results" color="green"
-        desc="Fetch final scores for today's games and record win/loss"
-        action={triggerSettle} />
-      <BackfillPanel />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 32, maxWidth: 640 }}>
+      <div>
+        <h1 className="type-headline-md" style={{ marginBottom: 6 }}>Admin</h1>
+        <p className="type-body-md" style={{ color: 'var(--md-on-surface-variant)' }}>
+          Manually trigger model runs. The cron does this automatically at 9 AM and 5 PM ET.
+        </p>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <JobButton
+          label="Run Morning Model"
+          desc="Fetch today's schedule, lines, injuries → generate picks"
+          action={triggerMorning}
+        />
+        <JobButton
+          label="Run Pregame Update"
+          desc="Re-run model with updated lines + auto-backfill last 7 days"
+          variant="tonal"
+          action={triggerPregame}
+        />
+        <JobButton
+          label="Settle Today's Results"
+          desc="Fetch final scores for today's games and record win/loss"
+          variant="tonal"
+          action={triggerSettle}
+        />
+        <BackfillPanel />
+      </div>
     </div>
   );
 }

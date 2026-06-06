@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runPregame } from '@/lib/model/runner';
+import { runPregame, runSettle } from '@/lib/model/runner';
 
 function auth(req: NextRequest) {
   const s = process.env.CRON_SECRET;
@@ -9,7 +9,9 @@ function auth(req: NextRequest) {
 export async function GET(req: NextRequest) {
   if (!auth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   try {
-    const result = await runPregame();
-    return NextResponse.json(result);
+    // Run settle first (scores from last night), then pregame (today's picks + backfill)
+    const settle = await runSettle().catch(e => ({ error: String(e) }));
+    const pregame = await runPregame();
+    return NextResponse.json({ settle, pregame });
   } catch (err) { return NextResponse.json({ error: String(err) }, { status: 500 }); }
 }

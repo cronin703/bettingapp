@@ -6,22 +6,56 @@ export const revalidate = 60;
 
 export default async function TodayPage() {
   let picks = await getTodaysPicks().catch(() => []);
-
-  // Self-heal: if no picks yet today, run the model now before rendering
   if (picks.length === 0) {
     try { await runMorning(); } catch {}
     picks = await getTodaysPicks().catch(() => []);
   }
 
+  const bets = picks.filter((p: { direction: string }) => p.direction !== 'skip');
+
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Today's Picks</h1>
-        <span className="text-sm text-gray-400">Updated {format(new Date(), 'h:mm a')}</span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+      {/* Page header */}
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+        <div>
+          <p className="type-label-sm" style={{ color: 'var(--md-on-surface-variant)', marginBottom: 4 }}>
+            {format(new Date(), 'EEEE, MMMM d yyyy')}
+          </p>
+          <h1 className="type-headline-md" style={{ color: 'var(--md-on-surface)' }}>Today's Picks</h1>
+        </div>
+        <p className="type-body-sm" style={{ color: 'var(--md-on-surface-variant)' }}>
+          Updated {format(new Date(), 'h:mm a')}
+        </p>
       </div>
-      {picks.length === 0
-        ? <div className="text-gray-400 text-center py-20 border border-gray-800 rounded-lg">No games scheduled today.</div>
-        : <TodayTable picks={picks as never} />}
+
+      {/* Summary chips */}
+      {picks.length > 0 && (
+        <div style={{ display: 'flex', gap: 12 }}>
+          <div className="card" style={{ padding: '10px 20px', display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span className="type-label-sm" style={{ color: 'var(--md-on-surface-variant)' }}>Games</span>
+            <span style={{ fontWeight: 600, color: 'var(--md-on-surface)' }}>{picks.length}</span>
+          </div>
+          <div className="card" style={{ padding: '10px 20px', display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span className="type-label-sm" style={{ color: 'var(--md-on-surface-variant)' }}>Bets</span>
+            <span style={{ fontWeight: 600, color: 'var(--md-primary)' }}>{bets.length}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Main content */}
+      {picks.length === 0 ? (
+        <div style={{
+          background: 'var(--md-surface-container-low)', borderRadius: 16,
+          padding: '64px 24px', textAlign: 'center',
+          color: 'var(--md-on-surface-variant)',
+        }}>
+          <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>🏀</div>
+          <p className="type-title-md" style={{ marginBottom: 6 }}>No games scheduled today</p>
+          <p className="type-body-md">The model runs automatically at 9 AM and 5 PM ET.</p>
+        </div>
+      ) : (
+        <TodayTable picks={picks as never} />
+      )}
     </div>
   );
 }
