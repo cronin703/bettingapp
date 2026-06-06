@@ -11,7 +11,7 @@ export default async function TodayPage() {
     picks = await getTodaysPicks().catch(() => []);
   }
 
-  const bets = picks.filter((p: { direction: string }) => p.direction !== 'skip');
+  const bets = picks.filter((p: Record<string, unknown>) => p.direction !== 'skip');
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
