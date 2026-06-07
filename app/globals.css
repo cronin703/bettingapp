@@ -187,6 +187,12 @@ body {
 }
 .table-row:hover { background: color-mix(in srgb, var(--md-primary) 5%, transparent); }
 
+.nav-link {
+  color: var(--md-on-surface-variant);
+  transition: color .15s;
+}
+.nav-link:hover { color: var(--md-on-surface); }
+
 /* Scrollable code pre */
 .code-pre {
   background: var(--md-surface-container-lowest);

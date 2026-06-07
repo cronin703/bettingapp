@@ -81,8 +81,7 @@ export default async function ResultsPage() {
             borderBottom: i < results.length - 1 ? '1px solid var(--md-outline-variant)' : 'none',
             transition: 'background .12s',
           }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'color-mix(in srgb, var(--md-primary) 4%, transparent)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            className="table-row"
           >
             <span style={{ fontSize: '.8125rem', color: 'var(--md-on-surface-variant)' }}>
               {format(parseISO(String(r.date)), 'MMM d')}

@@ -40,18 +40,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 { href: '/clv',     label: 'CLV' },
                 { href: '/model',   label: 'Model' },
               ].map(({ href, label }) => (
-                <Link key={href} href={href} style={{
-                  color: 'var(--md-on-surface-variant)',
+                <Link key={href} href={href} className="nav-link" style={{
                   fontSize: '.875rem', fontWeight: 500, letterSpacing: '.006em',
                   padding: '0 14px', height: '100%',
                   display: 'flex', alignItems: 'center',
                   textDecoration: 'none',
                   borderBottom: '3px solid transparent',
-                  transition: 'color .15s',
-                }}
-                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--md-on-surface)')}
-                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--md-on-surface-variant)')}
-                >
+                }}>
                   {label}
                 </Link>
               ))}
