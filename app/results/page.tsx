@@ -1,6 +1,6 @@
 import { getAllResults } from '@/lib/db/queries';
 import { format, parseISO } from 'date-fns';
-export const revalidate = 60;
+export const dynamic = 'force-dynamic';
 
 function DirectionChip({ d }: { d: string }) {
   const cls = d === 'over' ? 'chip chip-over' : d === 'under' ? 'chip chip-under' : 'chip chip-skip';
@@ -84,7 +84,7 @@ export default async function ResultsPage() {
             className="table-row"
           >
             <span style={{ fontSize: '.8125rem', color: 'var(--md-on-surface-variant)' }}>
-              {format(parseISO(String(r.date)), 'MMM d')}
+              {r.date ? format(parseISO(String(r.date)), 'MMM d') : '--'}
             </span>
             <div>
               <span style={{ fontWeight: 500, fontSize: '.875rem' }}>{r.away_team}</span>

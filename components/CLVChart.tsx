@@ -12,7 +12,9 @@ export default function CLVChart({ data }: { data: P[] }) {
     </div>
   );
 
-  const d = data.map(x => ({ date: format(new Date(x.date), 'MMM d'), clv: x.avg_clv }));
+  const d = data
+    .filter(x => x.date && !isNaN(new Date(x.date).getTime()))
+    .map(x => ({ date: format(new Date(x.date), 'MMM d'), clv: x.avg_clv }));
 
   return (
     <ResponsiveContainer width="100%" height={240}>

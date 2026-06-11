@@ -2,7 +2,7 @@ import { getTodaysPicks } from '@/lib/db/queries';
 import { runMorning } from '@/lib/model/runner';
 import { format } from 'date-fns';
 import TodayTable from '@/components/TodayTable';
-export const revalidate = 60;
+export const dynamic = 'force-dynamic';
 
 export default async function TodayPage() {
   let picks = await getTodaysPicks().catch(() => []);
